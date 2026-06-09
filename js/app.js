@@ -10,11 +10,40 @@ import { getSettings, saveSettings, get1RMs, save1RM, getActiveProgram, setActiv
 import { initTimerUI } from './components/timer.js';
 import { initSubSheet } from './components/substituteSheet.js';
 
-// Register service worker
+// Register service worker — updateViaCache:'none' forces browser to
+// always re-fetch sw.js from network, bypassing HTTP cache
+let _swRegistration = null;
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .then(reg => {
+        _swRegistration = reg;
+        // Check for updates every time the page becomes visible
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') reg.update();
+        });
+        // If a new SW is waiting, activate it immediately
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          newWorker?.addEventListener('statechange', () => {
+            if (newWorker.statechange === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateBanner();
+            }
+          });
+        });
+      })
+      .catch(() => {});
+
+    // If controller changes (new SW took over), reload for fresh content
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload();
+    });
   });
+}
+
+function showUpdateBanner() {
+  const banner = document.getElementById('update-banner');
+  if (banner) banner.style.display = 'flex';
 }
 
 // PWA install prompt
@@ -252,8 +281,15 @@ function renderSettings(container) {
   const infoCard = document.createElement('div');
   infoCard.className = 'card';
   infoCard.innerHTML = `
-    <div class="setting-row"><div class="setting-label"><h4>Program</h4><p>Jeff Nippard Full Body 5×/Week · 10 Weeks</p></div></div>
-    <div class="setting-row"><div class="setting-label"><h4>Version</h4><p>1.0.0 · Works offline</p></div></div>
+    <div class="setting-row"><div class="setting-label"><h4>Program</h4><p>Jeff Nippard Full Body 5×/Week + PPL · 10 Weeks each</p></div></div>
+    <div class="setting-row" style="flex-wrap:wrap;gap:8px">
+      <div class="setting-label"><h4>Version</h4><p id="app-version-str">v2.0 · Works offline · Checking for updates...</p></div>
+      <button id="check-update-btn" class="btn btn-outline btn-sm">🔄 Check for updates</button>
+    </div>
+    <div class="setting-row">
+      <div class="setting-label"><h4>Force refresh</h4><p>If the app looks outdated, tap this to clear cache and reload</p></div>
+      <button class="btn btn-outline btn-sm" onclick="(async()=>{ const keys=await caches.keys(); await Promise.all(keys.map(k=>caches.delete(k))); window.location.reload(true); })()">Clear cache</button>
+    </div>
   `;
   sec4.appendChild(infoCard);
   container.appendChild(sec4);
@@ -286,6 +322,48 @@ function renderSettings(container) {
   document.getElementById('dark-toggle')?.addEventListener('change', e => {
     saveSettings({ darkMode: e.target.checked });
     applyTheme();
+  });
+
+  // Version / SW status
+  const verStr = document.getElementById('app-version-str');
+  if (verStr) {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration().then(reg => {
+        if (reg) {
+          const state = reg.waiting ? '⚠️ Update waiting — tap "Check for updates"' :
+                        reg.active ? '✅ Up to date (v2.0)' : 'Loading...';
+          verStr.textContent = state;
+        } else {
+          verStr.textContent = 'v2.0 · No service worker (online only)';
+        }
+      });
+    } else {
+      verStr.textContent = 'v2.0 · Service workers not supported';
+    }
+  }
+
+  document.getElementById('check-update-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('check-update-btn');
+    btn.textContent = 'Checking...';
+    btn.disabled = true;
+    try {
+      if (_swRegistration) {
+        await _swRegistration.update();
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg?.waiting) {
+          btn.textContent = '✅ Update found — reloading';
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        } else {
+          btn.textContent = '✅ Already up to date';
+        }
+      } else {
+        // No SW — just hard reload
+        window.location.reload(true);
+      }
+    } catch(e) {
+      btn.textContent = 'Error — try "Clear cache"';
+    }
+    setTimeout(() => { btn.textContent = '🔄 Check for updates'; btn.disabled = false; }, 3000);
   });
 }
 

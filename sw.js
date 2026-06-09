@@ -1,4 +1,4 @@
-const CACHE = 'workout-v6';
+const CACHE = 'workout-v7';
 const ASSETS = [
   'index.html',
   'css/main.css',
@@ -39,7 +39,17 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  // Always fetch sw.js fresh from network — never serve from cache
+  if (e.request.url.includes('sw.js')) {
+    e.respondWith(fetch(e.request));
+    return;
+  }
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
   );
+});
+
+// Allow pages to trigger immediate SW activation
+self.addEventListener('message', e => {
+  if (e.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
