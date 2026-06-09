@@ -272,6 +272,129 @@ export function deleteCycle(idx) {
   localStorage.setItem('programCycles', JSON.stringify(cycles));
 }
 
+// --- Weak Point Analyzer ---
+// Muscle map (same as stats.js — needed for set counting)
+const WP_MUSCLE_MAP = {
+  'Back Squat': ['quads','glutes'], 'Hack Squat': ['quads','glutes'],
+  'Hack Squat or Leg Press': ['quads','glutes'],
+  'Leg Press': ['quads','glutes'], 'Single-Leg Leg Press': ['quads','glutes'],
+  'Bulgarian Split Squat': ['quads','glutes'], 'Leg Extension': ['quads'],
+  'Deadlift': ['hamstrings','back','glutes'], 'Reset Deadlift': ['hamstrings','back'],
+  'Romanian Deadlift': ['hamstrings','glutes'],
+  'Glute Ham Raise': ['hamstrings','glutes'], 'Nordic Curl': ['hamstrings'],
+  'Lying Leg Curl': ['hamstrings'], 'Seated Leg Curl': ['hamstrings'],
+  'Swiss Ball Leg Curl': ['hamstrings'],
+  'Barbell Hip Thrust': ['glutes'], 'Barbell Hip Thrust or RDL': ['glutes','hamstrings'],
+  'Seated Hip Abduction': ['glutes'],
+  'Standing Calf Raise': ['calves'], 'Seated Calf Raise': ['calves'],
+  'Eccentric-Accentuated Standing Calf Raise': ['calves'],
+  'Barbell Bench Press': ['chest','triceps'], 'Dumbbell Bench Press': ['chest','triceps'],
+  'Dumbbell Incline Press': ['chest','triceps'], 'Low Incline Dumbbell Press': ['chest','triceps'],
+  'Low to High Cable Flye': ['chest'], 'Decline Bench Press': ['chest','triceps'],
+  'Dip': ['chest','triceps'], 'Push Up': ['chest','triceps'],
+  'Weighted Pull-Up': ['back','biceps'], 'Chin-Up': ['back','biceps'],
+  'Weighted Chin-Up': ['back','biceps'],
+  'Pronated Pulldown': ['back'], 'Wide Grip Lat Pulldown': ['back'],
+  'Lat Pulldown': ['back'], 'Cable Pull-Over': ['back'],
+  'Humble Row': ['back'], 'Chest-Supported T-Bar Row': ['back'],
+  'Banded Chest-Supported T-Bar Row': ['back'], 'Pendlay Row': ['back'],
+  'Dumbbell Row': ['back'], 'Cable Seated Row': ['back'],
+  'Barbell Bent-Over Row': ['back'], 'Banded Barbell Row (explosive)': ['back'],
+  'Overhead Press': ['shoulders','triceps'], 'Arnold Press': ['shoulders'],
+  'Dumbbell Shoulder Press': ['shoulders','triceps'],
+  'Egyptian Lateral Raise': ['shoulders'], 'Cable Lateral Raise': ['shoulders'],
+  'Dumbbell Lateral Raise': ['shoulders'], 'Rope Face Pull': ['shoulders'],
+  'Reverse Pec Deck': ['shoulders'],
+  'Cable Rope Upright Row': ['shoulders','traps'],
+  'Hex Bar / Smith Machine Shrug': ['traps'],
+  'Supinated EZ Bar Curl': ['biceps'], 'Dumbbell Curl': ['biceps'],
+  'EZ Bar Curl': ['biceps'], 'EZ Bar Curl 21s': ['biceps'],
+  'Incline Dumbbell Curl': ['biceps'], 'Hammer Curl': ['biceps'],
+  'Cable Single-Arm Curl': ['biceps'],
+  'Tricep Pressdown': ['triceps'], 'Overhead Tricep Extension': ['triceps'],
+  'EZ Bar Skull Crusher': ['triceps'],
+  'Hanging Leg Raise': ['core'], 'AB Wheel Rollout': ['core'],
+  'Cable Crunch': ['core'], 'Bicycle Crunch': ['core'],
+};
+
+// Recommended exercises per lagging muscle (best hypertrophy options)
+const WP_RECOMMENDATIONS = {
+  quads:      ['Hack Squat', 'Leg Press', 'Leg Extension', 'Bulgarian Split Squat'],
+  hamstrings: ['Romanian Deadlift', 'Lying Leg Curl', 'Nordic Curl', 'Glute Ham Raise'],
+  glutes:     ['Barbell Hip Thrust', 'Bulgarian Split Squat', 'Romanian Deadlift'],
+  back:       ['Weighted Pull-Up', 'Barbell Bent-Over Row', 'Cable Seated Row', 'Humble Row'],
+  chest:      ['Barbell Bench Press', 'Dumbbell Incline Press', 'Low to High Cable Flye'],
+  shoulders:  ['Overhead Press', 'Egyptian Lateral Raise', 'Arnold Press', 'Rope Face Pull'],
+  biceps:     ['Incline Dumbbell Curl', 'EZ Bar Curl', 'Hammer Curl'],
+  triceps:    ['EZ Bar Skull Crusher', 'Overhead Tricep Extension', 'Tricep Pressdown'],
+  calves:     ['Standing Calf Raise', 'Seated Calf Raise'],
+  core:       ['AB Wheel Rollout', 'Hanging Leg Raise', 'Cable Crunch'],
+  traps:      ['Hex Bar / Smith Machine Shrug', 'Cable Rope Upright Row'],
+};
+
+// Weekly set targets for intermediate hypertrophy (lower end of evidence-based ranges)
+const WP_TARGETS = {
+  quads: 12, hamstrings: 10, glutes: 10, back: 14,
+  chest: 12, shoulders: 12, biceps: 8, triceps: 8,
+  calves: 8, core: 6, traps: 4,
+};
+
+const WP_LABELS = {
+  quads: 'Quads', hamstrings: 'Hamstrings', glutes: 'Glutes', back: 'Back',
+  chest: 'Chest', shoulders: 'Shoulders', biceps: 'Biceps', triceps: 'Triceps',
+  calves: 'Calves', core: 'Core', traps: 'Traps',
+};
+
+export function getWeakPointAnalysis() {
+  const logs = getLogs();
+  if (!logs.length) return null;
+
+  // Last 4 weeks
+  const cutoff = Date.now() - 28 * 86400000;
+  const recent = logs.filter(l => new Date(l.date + 'T12:00:00').getTime() >= cutoff);
+  if (!recent.length) return null;
+
+  // Count unique training weeks (groups of 7 days from start)
+  const dates = [...new Set(recent.map(l => l.date))].sort();
+  const firstDate = new Date(dates[0] + 'T12:00:00');
+  const lastDate = new Date(dates[dates.length - 1] + 'T12:00:00');
+  const numWeeks = Math.max(1, Math.ceil((lastDate - firstDate + 1) / (7 * 86400000)));
+
+  // Count sets per muscle group
+  const muscleSets = {};
+  recent.forEach(l => {
+    const muscles = WP_MUSCLE_MAP[l.exerciseName] || [];
+    muscles.forEach(m => { muscleSets[m] = (muscleSets[m] || 0) + 1; });
+  });
+
+  // Weekly average and comparison to target
+  const results = Object.entries(WP_TARGETS).map(([muscle, target]) => {
+    const totalSets = muscleSets[muscle] || 0;
+    const weeklyAvg = totalSets / numWeeks;
+    const ratio = weeklyAvg / target;
+    const deficit = Math.max(0, target - weeklyAvg);
+    let status = 'good';
+    if (ratio < 0.5) status = 'critical';
+    else if (ratio < 0.75) status = 'low';
+    else if (ratio < 1.0) status = 'moderate';
+
+    return {
+      muscle,
+      label: WP_LABELS[muscle],
+      weeklyAvg: Math.round(weeklyAvg * 10) / 10,
+      target,
+      ratio: Math.round(ratio * 100) / 100,
+      deficit: Math.round(deficit * 10) / 10,
+      status,
+      recommendations: WP_RECOMMENDATIONS[muscle] || [],
+    };
+  });
+
+  // Sort worst first
+  results.sort((a, b) => a.ratio - b.ratio);
+  return { results, numWeeks };
+}
+
 // --- Set mode (drop set / pyramid) per exercise per day ---
 export function getSetMode(exerciseName) {
   const today = getTodayDate();

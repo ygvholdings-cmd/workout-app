@@ -1,4 +1,4 @@
-import { getPRs, getLogs, getSettings, getCycles, deleteCycle } from '../store.js';
+import { getPRs, getLogs, getSettings, getCycles, deleteCycle, getWeakPointAnalysis } from '../store.js';
 
 // Muscle group mapping for volume calculation
 const MUSCLE_MAP = {
@@ -270,6 +270,12 @@ export function renderStats(container) {
   }
   container.appendChild(volCard);
 
+  // ── Weak Point Analyzer ──────────────────────────────────────────────
+  const analysis = getWeakPointAnalysis();
+  if (analysis) {
+    renderWeakPointAnalyzer(container, analysis);
+  }
+
   // ── PRs this month ────────────────────────────────────────────────────
   const monthPRs = Object.entries(prs)
     .filter(([, pr]) => new Date(pr.date) >= thisMonthStart)
@@ -375,4 +381,156 @@ export function renderStats(container) {
     });
     container.appendChild(list);
   }
+}
+
+// ─── WEAK POINT ANALYZER ──────────────────────────────────────────────────
+function renderWeakPointAnalyzer(container, { results, numWeeks }) {
+  const STATUS_COLOR = {
+    critical: '#f44336',
+    low:      '#ff9800',
+    moderate: '#ffc107',
+    good:     '#4caf50',
+  };
+  const STATUS_LABEL = {
+    critical: '🚨 Critical',
+    low:      '⚠️ Low',
+    moderate: '📈 Below target',
+    good:     '✅ On track',
+  };
+
+  const section = document.createElement('div');
+  section.style.cssText = 'margin:0 16px 8px';
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 0 6px';
+  hdr.innerHTML = `
+    <div>
+      <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--text2)">🎯 Weak Point Analyzer</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px">Based on ${numWeeks} week${numWeeks !== 1 ? 's' : ''} of data</div>
+    </div>
+    <button id="wp-toggle" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:12px;padding:4px 10px;cursor:pointer">Details</button>
+  `;
+  section.appendChild(hdr);
+
+  // Summary bar chart — all muscles
+  const barCard = document.createElement('div');
+  barCard.className = 'card';
+  barCard.style.cssText = 'padding:12px 14px';
+
+  results.forEach(({ label, weeklyAvg, target, ratio, status }) => {
+    const color = STATUS_COLOR[status];
+    const fillPct = Math.min(ratio * 100, 100);
+    const overPct = ratio > 1 ? Math.min((ratio - 1) * 100, 30) : 0;
+
+    const row = document.createElement('div');
+    row.style.cssText = 'margin-bottom:8px';
+    row.innerHTML = `
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+        <span style="color:var(--text);font-weight:${status !== 'good' ? '700' : '400'}">${label}</span>
+        <span style="color:${color}">${weeklyAvg} / ${target} sets/wk</span>
+      </div>
+      <div style="position:relative;height:7px;background:var(--surface2);border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${fillPct}%;background:${color};border-radius:4px;transition:width 0.5s ease"></div>
+        <div style="position:absolute;top:0;left:${Math.min(target/target*100,100)}%;width:2px;height:100%;background:var(--text2);opacity:0.4"></div>
+      </div>
+    `;
+    barCard.appendChild(row);
+  });
+
+  // Target line legend
+  const legend = document.createElement('div');
+  legend.style.cssText = 'font-size:10px;color:var(--text2);margin-top:4px;display:flex;align-items:center;gap:4px';
+  legend.innerHTML = `<div style="width:12px;height:2px;background:var(--text2);opacity:0.4"></div> Target minimum`;
+  barCard.appendChild(legend);
+  section.appendChild(barCard);
+
+  // Detailed recommendations (collapsible)
+  const detailPanel = document.createElement('div');
+  detailPanel.id = 'wp-details';
+  detailPanel.style.display = 'none';
+
+  const weakMuscles = results.filter(r => r.status !== 'good');
+  if (weakMuscles.length) {
+    const detailTitle = document.createElement('div');
+    detailTitle.style.cssText = 'font-size:12px;font-weight:700;color:var(--text2);padding:8px 0 4px;text-transform:uppercase;letter-spacing:0.06em';
+    detailTitle.textContent = `${weakMuscles.length} muscles below target — recommended fixes:`;
+    detailPanel.appendChild(detailTitle);
+
+    weakMuscles.slice(0, 5).forEach(({ label, muscle, weeklyAvg, target, deficit, status, recommendations }) => {
+      const color = STATUS_COLOR[status];
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.cssText = `margin-bottom:8px;border-color:${color}30;overflow:visible`;
+
+      // Muscle header
+      const mhdr = document.createElement('div');
+      mhdr.style.cssText = 'padding:10px 14px 6px;display:flex;align-items:center;gap:8px';
+      mhdr.innerHTML = `
+        <div style="flex:1">
+          <span style="font-size:14px;font-weight:700">${label}</span>
+          <span style="font-size:11px;color:${color};margin-left:6px">${STATUS_LABEL[status]}</span>
+        </div>
+        <div style="text-align:right;font-size:11px;color:var(--text2)">
+          <div style="color:${color};font-weight:700">${weeklyAvg} sets/wk</div>
+          <div>target: ${target} (+${Math.round(deficit)} needed)</div>
+        </div>
+      `;
+      card.appendChild(mhdr);
+
+      // Why it matters
+      const whyMap = {
+        quads: 'Quads are your primary leg muscle. Underdeveloped quads = small-looking legs regardless of hamstring/glute size.',
+        hamstrings: 'Hamstrings are the most undertrained muscle in most programs. They fill out the back of the leg and protect knee joints.',
+        glutes: 'Glutes are the largest muscle in the body. More glute volume = more total muscle mass + better lower body aesthetics.',
+        back: 'Back width and thickness create the V-taper — the most impactful aesthetic change for upper body appearance.',
+        chest: 'Chest volume drives upper body thickness. Low chest work is one of the most common programming oversights.',
+        shoulders: 'Side delts make shoulders look wide. Most people under-train the lateral head which creates a round, capped look.',
+        biceps: 'Bicep volume drives the "peaked" look. Many programs get enough indirect bicep work but not enough direct stimulus.',
+        triceps: 'Triceps make up ~65% of upper arm mass — more important than biceps for overall arm size.',
+        calves: 'Calves are the most stubborn muscle. They need higher frequency and full ROM to grow — most people do neither.',
+        core: 'Core strength supports every compound lift. A weak core is a performance limiter and injury risk.',
+        traps: 'Trap development contributes to the "thick" look from the front and side. Often undertrained in push-pull-legs programs.',
+      };
+
+      if (whyMap[muscle]) {
+        const why = document.createElement('div');
+        why.style.cssText = 'font-size:11px;color:var(--text2);padding:0 14px 8px;line-height:1.5;font-style:italic';
+        why.textContent = whyMap[muscle];
+        card.appendChild(why);
+      }
+
+      // Recommended exercises
+      const recLabel = document.createElement('div');
+      recLabel.style.cssText = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--text2);padding:0 14px 4px';
+      recLabel.textContent = 'Best exercises to add:';
+      card.appendChild(recLabel);
+
+      recommendations.slice(0, 3).forEach(exName => {
+        const exRow = document.createElement('div');
+        exRow.style.cssText = 'display:flex;align-items:center;padding:8px 14px;border-top:1px solid var(--border)';
+        exRow.innerHTML = `
+          <span style="font-size:13px;font-weight:500;flex:1">${exName}</span>
+          <span style="font-size:10px;background:var(--accent-dim);color:var(--accent);padding:2px 8px;border-radius:999px;font-weight:700">Add</span>
+        `;
+        card.appendChild(exRow);
+      });
+
+      detailPanel.appendChild(card);
+    });
+  } else {
+    detailPanel.innerHTML = `<div style="text-align:center;padding:16px;color:var(--green);font-size:14px">✅ All muscle groups are hitting their weekly targets! Keep it up.</div>`;
+  }
+
+  section.appendChild(detailPanel);
+  container.appendChild(section);
+
+  // Toggle button
+  hdr.querySelector('#wp-toggle').addEventListener('click', () => {
+    const panel = document.getElementById('wp-details');
+    if (!panel) return;
+    const isOpen = panel.style.display !== 'none';
+    panel.style.display = isOpen ? 'none' : 'block';
+    hdr.querySelector('#wp-toggle').textContent = isOpen ? 'Details' : 'Hide';
+  });
 }
