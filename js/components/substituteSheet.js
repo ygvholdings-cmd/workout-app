@@ -1,5 +1,5 @@
 import { SUBSTITUTIONS } from '../data/substitutions.js';
-import { setSubstitution } from '../store.js';
+import { setSubstitution, getCustomExercises } from '../store.js';
 
 let _onSelect = null;
 
@@ -15,15 +15,18 @@ export function openSubSheet(originalName, onSelect) {
   if (!list) return;
   list.innerHTML = '';
 
-  const alts = SUBSTITUTIONS[originalName] || [];
+  const builtIn = SUBSTITUTIONS[originalName] || [];
+  const custom = getCustomExercises().map(e => ({ name: e.name, muscle: e.muscleGroup + (e.equipment ? ' · ' + e.equipment : ''), isCustom: true }));
+  const alts = [...builtIn, ...custom];
+
   if (!alts.length) {
-    list.innerHTML = '<p style="padding:16px;color:var(--text2);font-size:14px">No alternatives listed for this exercise.</p>';
+    list.innerHTML = '<p style="padding:16px;color:var(--text2);font-size:14px">No alternatives listed. Add your own in Settings → My Exercises.</p>';
   } else {
     alts.forEach(alt => {
       const btn = document.createElement('button');
       btn.className = 'sub-option';
       btn.innerHTML = `
-        <div class="sub-option-name">${alt.name}</div>
+        <div class="sub-option-name">${alt.name}${alt.isCustom ? ' <span style="font-size:10px;color:var(--accent)">MY EXERCISE</span>' : ''}</div>
         <div class="sub-option-muscle">${alt.muscle}</div>
       `;
       btn.addEventListener('click', () => {

@@ -185,6 +185,24 @@ export function getPRDetails(exerciseName) {
   return prs[exerciseName] || null;
 }
 
+// --- Custom exercises ---
+export function getCustomExercises() {
+  try { return JSON.parse(localStorage.getItem('customExercises') || '[]'); } catch { return []; }
+}
+
+export function saveCustomExercise(exercise) {
+  // exercise: { name, muscleGroup, equipment, notes }
+  const list = getCustomExercises();
+  const idx = list.findIndex(e => e.name.toLowerCase() === exercise.name.toLowerCase());
+  if (idx >= 0) list[idx] = exercise; else list.push(exercise);
+  localStorage.setItem('customExercises', JSON.stringify(list));
+}
+
+export function deleteCustomExercise(name) {
+  const list = getCustomExercises().filter(e => e.name !== name);
+  localStorage.setItem('customExercises', JSON.stringify(list));
+}
+
 // --- Workout override (manual day picker) ---
 export function getWorkoutOverride() {
   try {

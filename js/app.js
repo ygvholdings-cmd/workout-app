@@ -2,6 +2,8 @@ import { renderToday } from './screens/today.js';
 import { renderSchedule } from './screens/schedule.js';
 import { renderHistory } from './screens/history.js';
 import { renderRecords } from './screens/records.js';
+import { renderStats } from './screens/stats.js';
+import { getCustomExercises, saveCustomExercise, deleteCustomExercise } from './store.js';
 import { renderCalculator } from './screens/calculator.js';
 import { getSettings, saveSettings, get1RMs, save1RM, getActiveProgram, setActiveProgram } from './store.js';
 import { initTimerUI } from './components/timer.js';
@@ -56,13 +58,83 @@ function navigate(screenId) {
   if (screenId === 'today') renderToday(screen);
   else if (screenId === 'schedule') renderSchedule(screen);
   else if (screenId === 'history') renderHistory(screen);
-  else if (screenId === 'records') renderRecords(screen);
+  else if (screenId === 'records') renderStats(screen);
   else if (screenId === 'settings') renderSettings(screen);
 }
 
 document.querySelectorAll('.nav-btn').forEach(btn => {
   btn.addEventListener('click', () => navigate(btn.dataset.screen));
 });
+
+// Custom exercise builder
+function renderCustomExercises(card) {
+  card.innerHTML = '';
+  const customs = getCustomExercises();
+  const MUSCLE_GROUPS = ['Quads','Hamstrings','Glutes','Back','Chest','Shoulders','Biceps','Triceps','Calves','Core','Full Body'];
+  const EQUIPMENT = ['Barbell','Dumbbell','Cable','Machine','Bodyweight','Bands','Kettlebell'];
+
+  // Existing exercises list
+  if (customs.length) {
+    const list = document.createElement('div');
+    list.style.cssText = 'padding:0 16px';
+    customs.forEach(ex => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border)';
+      row.innerHTML = `
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:500">${ex.name}</div>
+          <div style="font-size:11px;color:var(--text2)">${ex.muscleGroup}${ex.equipment ? ' · ' + ex.equipment : ''}${ex.notes ? ' · ' + ex.notes : ''}</div>
+        </div>
+        <button class="del-ex-btn" data-name="${ex.name}" style="background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:4px">🗑</button>
+      `;
+      list.appendChild(row);
+    });
+    card.appendChild(list);
+    card.querySelectorAll('.del-ex-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        deleteCustomExercise(btn.dataset.name);
+        renderCustomExercises(card);
+      });
+    });
+  }
+
+  // Add form
+  const form = document.createElement('div');
+  form.style.cssText = 'padding:14px 16px';
+  form.innerHTML = `
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;font-weight:600">Add New Exercise</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <input type="text" id="ex-name" placeholder="Exercise name *" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;padding:8px 10px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <select id="ex-muscle" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;padding:8px 10px">
+          <option value="">Muscle group *</option>
+          ${MUSCLE_GROUPS.map(m => `<option value="${m}">${m}</option>`).join('')}
+        </select>
+        <select id="ex-equip" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;padding:8px 10px">
+          <option value="">Equipment</option>
+          ${EQUIPMENT.map(e => `<option value="${e}">${e}</option>`).join('')}
+        </select>
+      </div>
+      <input type="text" id="ex-notes" placeholder="Cue / notes (optional)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;padding:8px 10px">
+      <button id="add-ex-btn" class="btn btn-primary btn-full">+ Add Exercise</button>
+    </div>
+  `;
+  card.appendChild(form);
+
+  card.querySelector('#add-ex-btn').addEventListener('click', () => {
+    const name = card.querySelector('#ex-name').value.trim();
+    const muscleGroup = card.querySelector('#ex-muscle').value;
+    const equipment = card.querySelector('#ex-equip').value;
+    const notes = card.querySelector('#ex-notes').value.trim();
+    if (!name || !muscleGroup) {
+      card.querySelector('#ex-name').style.borderColor = name ? 'var(--border)' : 'var(--red)';
+      card.querySelector('#ex-muscle').style.borderColor = muscleGroup ? 'var(--border)' : 'var(--red)';
+      return;
+    }
+    saveCustomExercise({ name, muscleGroup, equipment, notes });
+    renderCustomExercises(card);
+  });
+}
 
 // Settings screen
 function renderSettings(container) {
@@ -160,6 +232,17 @@ function renderSettings(container) {
   `;
   sec3.appendChild(prefCard);
   container.appendChild(sec3);
+
+  // Custom Exercise Builder
+  const secEx = document.createElement('div');
+  secEx.className = 'settings-section';
+  secEx.innerHTML = '<h3>My Exercises</h3>';
+  const exCard = document.createElement('div');
+  exCard.className = 'card';
+  exCard.id = 'custom-ex-card';
+  secEx.appendChild(exCard);
+  container.appendChild(secEx);
+  renderCustomExercises(exCard);
 
   // App info
   const sec4 = document.createElement('div');
