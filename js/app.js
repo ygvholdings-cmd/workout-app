@@ -3,7 +3,7 @@ import { renderSchedule } from './screens/schedule.js';
 import { renderHistory } from './screens/history.js';
 import { renderRecords } from './screens/records.js';
 import { renderCalculator } from './screens/calculator.js';
-import { getSettings, saveSettings, get1RMs, save1RM } from './store.js';
+import { getSettings, saveSettings, get1RMs, save1RM, getActiveProgram, setActiveProgram } from './store.js';
 import { initTimerUI } from './components/timer.js';
 import { initSubSheet } from './components/substituteSheet.js';
 
@@ -108,6 +108,36 @@ function renderSettings(container) {
   `;
   sec2.appendChild(progCard);
   container.appendChild(sec2);
+
+  // Program selector
+  const secProg = document.createElement('div');
+  secProg.className = 'settings-section';
+  secProg.innerHTML = '<h3>Active Program</h3>';
+  const progSelCard = document.createElement('div');
+  progSelCard.className = 'card';
+  const activeProg = getActiveProgram();
+  progSelCard.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px">
+      <button class="prog-btn ${activeProg === 'fullbody' ? 'prog-active' : ''}" data-prog="fullbody"
+        style="padding:14px 10px;border-radius:10px;border:2px solid ${activeProg === 'fullbody' ? 'var(--accent)' : 'var(--border)'};background:${activeProg === 'fullbody' ? 'var(--accent-dim)' : 'var(--surface2)'};color:var(--text);cursor:pointer;text-align:left">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">Full Body 5×</div>
+        <div style="font-size:11px;color:var(--text2)">Jeff Nippard · 10 weeks<br>5 full-body sessions/wk</div>
+      </button>
+      <button class="prog-btn ${activeProg === 'ppl' ? 'prog-active' : ''}" data-prog="ppl"
+        style="padding:14px 10px;border-radius:10px;border:2px solid ${activeProg === 'ppl' ? 'var(--accent)' : 'var(--border)'};background:${activeProg === 'ppl' ? 'var(--accent-dim)' : 'var(--surface2)'};color:var(--text);cursor:pointer;text-align:left">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">PPL Split</div>
+        <div style="font-size:11px;color:var(--text2)">Custom · 10 weeks<br>Legs 2×, Push 2×, Pull 1×</div>
+      </button>
+    </div>
+  `;
+  secProg.appendChild(progSelCard);
+  container.appendChild(secProg);
+  progSelCard.querySelectorAll('.prog-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setActiveProgram(btn.dataset.prog);
+      renderSettings(container);
+    });
+  });
 
   // Preferences
   const sec3 = document.createElement('div');

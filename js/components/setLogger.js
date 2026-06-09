@@ -1,4 +1,4 @@
-import { logSet, getLastUsedWeight, checkAndUpdatePR, isPlateaued, getSettings, getTodayDate, get1RMs } from '../store.js';
+import { logSet, getLastUsedWeight, checkAndUpdatePR, isPlateaued, getSettings, getTodayDate, get1RMs, getLastSessionSets, getPRDetails } from '../store.js';
 import { showPR } from './prBanner.js';
 import { startTimer } from './timer.js';
 import { computeLoad as computeLoadProg } from '../data/program.js';
@@ -45,6 +45,32 @@ export function renderExerciseCard(exercise, workoutId, weekNum, container, onSe
   const tempoStr = exercise.tempo ? ` · Tempo ${exercise.tempo}` : '';
   meta.innerHTML = `<span>${exercise.wu} warmup · ${exercise.sets} × ${exercise.reps}</span><span>${intensityStr}${loadStr}${tempoStr}</span><span>Rest ${Math.round(exercise.rest / 60)}min</span>`;
   card.appendChild(meta);
+
+  // History + PR strip (always visible)
+  const lastSession = getLastSessionSets(displayName);
+  const prDetails = getPRDetails(displayName);
+  if (lastSession || prDetails) {
+    const histStrip = document.createElement('div');
+    histStrip.style.cssText = 'display:flex;gap:10px;padding:4px 14px 6px;flex-wrap:wrap;border-top:1px solid var(--border)';
+
+    if (lastSession) {
+      const dateStr = new Date(lastSession.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const setsStr = lastSession.sets.map(s => `${s.weight}×${s.reps}`).join(' · ');
+      const col = document.createElement('div');
+      col.style.cssText = 'flex:1;min-width:0';
+      col.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">Last session (${dateStr})</div><div style="font-size:12px;color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${setsStr}</div>`;
+      histStrip.appendChild(col);
+    }
+
+    if (prDetails) {
+      const col = document.createElement('div');
+      col.style.cssText = 'flex-shrink:0;text-align:right';
+      col.innerHTML = `<div style="font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">🏆 PR</div><div style="font-size:12px;color:var(--accent);font-weight:700">${prDetails.weight}kg × ${prDetails.reps} · ~${Math.round(prDetails.orm)}kg 1RM</div>`;
+      histStrip.appendChild(col);
+    }
+
+    card.appendChild(histStrip);
+  }
 
   // Plateau warning
   if (plateaued) {

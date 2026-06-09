@@ -168,3 +168,44 @@ export function formatWeight(kg, units) {
 export function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
 }
+
+// Returns the sets from the most recent logged session for this exercise
+export function getLastSessionSets(exerciseName) {
+  const logs = getLogs().filter(l => l.exerciseName === exerciseName && l.weight > 0);
+  if (!logs.length) return null;
+  // Find the most recent date
+  const lastDate = logs[logs.length - 1].date;
+  const sets = logs.filter(l => l.date === lastDate).map(l => ({ weight: l.weight, reps: l.reps }));
+  return { date: lastDate, sets };
+}
+
+// Returns PR: heaviest weight logged, and best estimated 1RM set
+export function getPRDetails(exerciseName) {
+  const prs = getPRs();
+  return prs[exerciseName] || null;
+}
+
+// --- Workout override (manual day picker) ---
+export function getWorkoutOverride() {
+  try {
+    return JSON.parse(localStorage.getItem('workoutOverride') || 'null');
+  } catch { return null; }
+}
+
+export function setWorkoutOverride(override) {
+  // override: { weekIdx: 0-9, workoutIdx: 0-4 } or null to clear
+  if (override === null) {
+    localStorage.removeItem('workoutOverride');
+  } else {
+    localStorage.setItem('workoutOverride', JSON.stringify(override));
+  }
+}
+
+// --- Active program ---
+export function getActiveProgram() {
+  return localStorage.getItem('activeProgram') || 'fullbody';
+}
+
+export function setActiveProgram(name) {
+  localStorage.setItem('activeProgram', name);
+}
