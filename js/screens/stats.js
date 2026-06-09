@@ -1,4 +1,4 @@
-import { getPRs, getLogs, getSettings } from '../store.js';
+import { getPRs, getLogs, getSettings, getCycles, deleteCycle } from '../store.js';
 
 // Muscle group mapping for volume calculation
 const MUSCLE_MAP = {
@@ -286,6 +286,69 @@ export function renderStats(container) {
       prCard.appendChild(row);
     });
     container.appendChild(prCard);
+  }
+
+  // ── Program Cycle History ────────────────────────────────────────────
+  const cycles = getCycles();
+  if (cycles.length) {
+    const cycleLabel = document.createElement('div');
+    cycleLabel.style.cssText = 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text2);padding:8px 16px 4px';
+    cycleLabel.textContent = '🔄 Program Cycles Completed';
+    container.appendChild(cycleLabel);
+
+    cycles.forEach((cycle, idx) => {
+      const card = document.createElement('div');
+      card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:10px;margin:0 16px 8px;padding:12px 14px';
+
+      const startStr = cycle.startDate ? new Date(cycle.startDate).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'2-digit'}) : '—';
+      const endStr = cycle.endDate ? new Date(cycle.endDate).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'2-digit'}) : '—';
+      const prog = cycle.program === 'ppl' ? 'PPL' : 'Full Body 5×';
+
+      card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div>
+            <div style="font-size:14px;font-weight:700">Cycle ${idx + 1} — ${prog}</div>
+            <div style="font-size:11px;color:var(--text2)">${startStr} → ${endStr} · ${cycle.totalSessions || '—'} sessions</div>
+          </div>
+          <button class="del-cycle-btn" data-idx="${idx}" style="background:none;border:none;color:var(--text2);font-size:16px;cursor:pointer">✕</button>
+        </div>
+        ${cycle.finalOrms ? `
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+          ${Object.entries(cycle.finalOrms).map(([lift, val]) => `
+            <div style="background:var(--surface2);border-radius:6px;padding:6px;text-align:center">
+              <div style="font-size:16px;font-weight:700">${Math.round(val)}</div>
+              <div style="font-size:10px;color:var(--text2)">${lift.toUpperCase()} kg</div>
+            </div>`).join('')}
+        </div>` : ''}
+        ${cycle.notes ? `<div style="font-size:12px;color:var(--text2);margin-top:8px;font-style:italic">"${cycle.notes}"</div>` : ''}
+      `;
+      card.querySelector('.del-cycle-btn').addEventListener('click', () => {
+        deleteCycle(idx);
+        renderStats(container);
+      });
+      container.appendChild(card);
+    });
+
+    // Comparison if ≥2 cycles
+    if (cycles.length >= 2) {
+      const last = cycles[cycles.length - 1];
+      const prev = cycles[cycles.length - 2];
+      if (last.finalOrms && prev.finalOrms) {
+        const compCard = document.createElement('div');
+        compCard.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:10px;margin:0 16px 12px;padding:12px 14px';
+        compCard.innerHTML = `<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Cycle ${cycles.length-1} → ${cycles.length} Strength Gains</div>`;
+        Object.keys(last.finalOrms).forEach(lift => {
+          const delta = Math.round((last.finalOrms[lift] || 0) - (prev.finalOrms[lift] || 0));
+          const color = delta > 0 ? 'var(--green)' : delta < 0 ? 'var(--red)' : 'var(--text2)';
+          const sign = delta > 0 ? '+' : '';
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--border)';
+          row.innerHTML = `<span>${lift.charAt(0).toUpperCase()+lift.slice(1)}</span><span style="color:${color};font-weight:700">${sign}${delta} kg est. 1RM</span>`;
+          compCard.appendChild(row);
+        });
+        container.appendChild(compCard);
+      }
+    }
   }
 
   // ── All-time PR table ─────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { getTodayWorkout, WORKOUT_NAMES, PROGRAM } from '../data/program.js';
 import { getPPLTodayWorkout, PPL_PROGRAM, PPL_WORKOUT_NAMES } from '../data/ppl.js';
-import { getSettings, getTodayLogs, getWorkoutOverride, setWorkoutOverride, getActiveProgram } from '../store.js';
+import { getSettings, getTodayLogs, getWorkoutOverride, setWorkoutOverride, getActiveProgram, get1RMs, getCycles, saveCycle, getLogs } from '../store.js';
 import { renderExerciseCard } from '../components/setLogger.js';
 import { renderKegelCard } from '../components/kegelTimer.js';
 import { getSubstitution } from '../store.js';
@@ -134,7 +134,10 @@ export function renderToday(container) {
   const hero = document.createElement('div');
   hero.className = 'today-hero';
   hero.innerHTML = `
-    <div class="today-workout-name">${name}</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div class="today-workout-name">${name}</div>
+      <div id="session-timer" style="font-size:13px;color:var(--text2);font-variant-numeric:tabular-nums;display:none">⏱ <span id="timer-elapsed">0:00</span></div>
+    </div>
     <div class="today-meta">
       <span>📅 ${weekData.label}</span>
       <span>⚡ ${weekData.block === 3 ? (weekNum === 9 ? 'Deload' : 'AMRAP') : 'Block ' + weekData.block}</span>
@@ -143,6 +146,21 @@ export function renderToday(container) {
     </div>
   `;
   container.appendChild(hero);
+
+  // Session timer — starts on first logged set
+  let sessionTimerInterval = null;
+  let sessionStartTime = null;
+  function startSessionTimer() {
+    if (sessionTimerInterval) return;
+    sessionStartTime = Date.now();
+    document.getElementById('session-timer')?.style.setProperty('display', 'block');
+    sessionTimerInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+      const m = Math.floor(elapsed / 60), s = elapsed % 60;
+      const el = document.getElementById('timer-elapsed');
+      if (el) el.textContent = `${m}:${s.toString().padStart(2,'0')}`;
+    }, 1000);
+  }
 
   // Progress bar
   const loggedSets = todayLogs.length;
@@ -160,9 +178,8 @@ export function renderToday(container) {
   summary.innerHTML = `<h3>✅ Great session!</h3><div class="summary-stats"><div class="summary-stat"><div class="val" id="sum-sets">0</div><div class="lbl">Sets</div></div><div class="summary-stat"><div class="val" id="sum-vol">0</div><div class="lbl">Volume (kg)</div></div><div class="summary-stat"><div class="val" id="sum-time">0</div><div class="lbl">Min</div></div></div>`;
   container.appendChild(summary);
 
-  const sessionStart = Date.now();
-
   function onSetLogged() {
+    startSessionTimer(); // start timer on first logged set
     const fresh = getTodayLogs(workoutId);
     const done = fresh.length;
     const fillEl = document.getElementById('progress-fill');
@@ -171,12 +188,50 @@ export function renderToday(container) {
     if (textEl) textEl.textContent = `${done}/${totalWorkingSets} sets`;
     if (done >= totalWorkingSets && totalWorkingSets > 0) {
       const vol = fresh.reduce((s, l) => s + (l.weight || 0) * (l.reps || 0), 0);
-      const mins = Math.round((Date.now() - sessionStart) / 60000);
+      const elapsed = sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 1000) : 0;
+      const mins = Math.round(elapsed / 60);
       document.getElementById('sum-sets').textContent = done;
       document.getElementById('sum-vol').textContent = Math.round(vol);
-      document.getElementById('sum-time').textContent = mins;
+      document.getElementById('sum-time').textContent = mins || '—';
       document.getElementById('session-summary')?.classList.add('show');
+      if (sessionTimerInterval) { clearInterval(sessionTimerInterval); }
+
+      // Week 10 AMRAP day — prompt to save cycle
+      if (weekNum === 10 && weekData.block === 3) {
+        setTimeout(() => showSaveCyclePrompt(activeProgram, settings.programStartDate, container), 1200);
+      }
     }
+  }
+
+  // ── Save cycle prompt (Week 10 only) ─────────────────────────────────
+  function showSaveCyclePrompt(program, startDate, container) {
+    if (document.getElementById('save-cycle-prompt')) return;
+    const orms = get1RMs();
+    const totalSessions = new Set(getLogs().map(l => l.date)).size;
+    const prompt = document.createElement('div');
+    prompt.id = 'save-cycle-prompt';
+    prompt.style.cssText = 'background:linear-gradient(135deg,var(--surface),var(--surface2));border:2px solid var(--accent);border-radius:14px;margin:12px 16px;padding:16px';
+    prompt.innerHTML = `
+      <div style="font-size:18px;margin-bottom:6px">🏆 Program Complete!</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Save this cycle to track your progress over time. Your 1RMs and session count will be recorded.</div>
+      <div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:12px;display:grid;grid-template-columns:repeat(2,1fr);gap:6px">
+        ${Object.entries(orms).map(([lift, val]) => `<div style="font-size:12px"><span style="color:var(--text2)">${lift.toUpperCase()}</span> <strong>${val} kg</strong></div>`).join('')}
+        <div style="font-size:12px"><span style="color:var(--text2)">SESSIONS</span> <strong>${totalSessions}</strong></div>
+      </div>
+      <textarea id="cycle-notes" placeholder="Notes (optional): how did it go?" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:8px;margin-bottom:10px;resize:none;height:60px"></textarea>
+      <div style="display:flex;gap:8px">
+        <button id="confirm-save-cycle" class="btn btn-primary" style="flex:1">Save Cycle</button>
+        <button id="dismiss-cycle" class="btn btn-outline">Later</button>
+      </div>
+    `;
+    container.insertBefore(prompt, container.querySelector('.section-label'));
+    prompt.querySelector('#confirm-save-cycle').addEventListener('click', () => {
+      const notes = prompt.querySelector('#cycle-notes').value.trim();
+      saveCycle({ program, startDate, endDate: new Date().toISOString().slice(0,10), finalOrms: orms, totalSessions, notes });
+      prompt.innerHTML = '<div style="text-align:center;padding:8px;color:var(--green);font-size:14px;font-weight:700">✅ Cycle saved! View it in Stats.</div>';
+      setTimeout(() => prompt.remove(), 3000);
+    });
+    prompt.querySelector('#dismiss-cycle').addEventListener('click', () => prompt.remove());
   }
 
   // Kegel section

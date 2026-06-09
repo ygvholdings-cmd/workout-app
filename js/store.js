@@ -185,6 +185,93 @@ export function getPRDetails(exerciseName) {
   return prs[exerciseName] || null;
 }
 
+// --- Smart progression engine ---
+// Returns a weight/reps suggestion for the next session of an exercise
+export function getProgressionSuggestion(exerciseName, repsTarget, setCount) {
+  const lastSession = getLastSessionSets(exerciseName);
+  if (!lastSession || !lastSession.sets.length) {
+    return { suggestedWeight: null, change: 0, reason: 'First session — start at a comfortable weight', icon: '🆕', color: 'var(--text2)' };
+  }
+
+  const workingSets = lastSession.sets.filter(s => s.weight > 0 && s.reps > 0);
+  if (!workingSets.length) return null;
+
+  const lastWeight = workingSets[workingSets.length - 1].weight;
+
+  // Parse target reps — handle "8", "6-8", "10/10", "15+15", "RPE only", "AMRAP"
+  const targetNum = (() => {
+    if (!repsTarget || repsTarget === 'AMRAP' || repsTarget === 'RPE only') return null;
+    const m = String(repsTarget).match(/\d+/);
+    return m ? parseInt(m[0]) : null;
+  })();
+
+  if (!targetNum) {
+    // AMRAP or RPE-only: if they logged more reps than last time, suggest +2.5
+    const lastAvgReps = workingSets.reduce((s, l) => s + l.reps, 0) / workingSets.length;
+    const prev2Sessions = getRecentSessionWeights(exerciseName, 2);
+    if (prev2Sessions.length >= 2 && prev2Sessions[1] >= prev2Sessions[0]) {
+      return { suggestedWeight: lastWeight + 2.5, change: 2.5, reason: `Strong performance — add weight`, icon: '📈', color: 'var(--green)' };
+    }
+    return { suggestedWeight: lastWeight, change: 0, reason: `Keep same weight, push for more reps`, icon: '→', color: 'var(--text2)' };
+  }
+
+  const avgReps = workingSets.reduce((s, l) => s + l.reps, 0) / workingSets.length;
+  const completedSets = workingSets.filter(s => s.reps >= targetNum).length;
+  const totalSets = setCount || workingSets.length;
+  const completionRate = completedSets / totalSets;
+
+  const round = v => Math.round(v / 2.5) * 2.5;
+
+  if (completionRate >= 1.0 && avgReps >= targetNum) {
+    // Crushed it — increase
+    const inc = 2.5;
+    return {
+      suggestedWeight: round(lastWeight + inc),
+      change: inc,
+      reason: `Hit all ${Math.round(avgReps)} reps last session — add ${inc}kg`,
+      icon: '📈',
+      color: 'var(--green)',
+    };
+  } else if (completionRate >= 0.75) {
+    // Almost there — repeat
+    return {
+      suggestedWeight: lastWeight,
+      change: 0,
+      reason: `${completedSets}/${totalSets} sets completed — repeat this weight`,
+      icon: '→',
+      color: 'var(--yellow)',
+    };
+  } else {
+    // Struggled — reduce slightly
+    const dec = 2.5;
+    return {
+      suggestedWeight: Math.max(round(lastWeight - dec), 0),
+      change: -dec,
+      reason: `Tough last session — drop ${dec}kg to nail technique`,
+      icon: '📉',
+      color: 'var(--red)',
+    };
+  }
+}
+
+// --- Program cycle history ---
+export function getCycles() {
+  try { return JSON.parse(localStorage.getItem('programCycles') || '[]'); } catch { return []; }
+}
+
+export function saveCycle(cycle) {
+  // cycle: { program, startDate, endDate, finalOrms, totalSessions, totalVolume, notes }
+  const cycles = getCycles();
+  cycles.push({ ...cycle, savedAt: new Date().toISOString() });
+  localStorage.setItem('programCycles', JSON.stringify(cycles));
+}
+
+export function deleteCycle(idx) {
+  const cycles = getCycles();
+  cycles.splice(idx, 1);
+  localStorage.setItem('programCycles', JSON.stringify(cycles));
+}
+
 // --- Custom exercises ---
 export function getCustomExercises() {
   try { return JSON.parse(localStorage.getItem('customExercises') || '[]'); } catch { return []; }

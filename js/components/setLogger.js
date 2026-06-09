@@ -1,4 +1,4 @@
-import { logSet, getLastUsedWeight, checkAndUpdatePR, isPlateaued, getSettings, getTodayDate, get1RMs, getLastSessionSets, getPRDetails } from '../store.js';
+import { logSet, getLastUsedWeight, checkAndUpdatePR, isPlateaued, getSettings, getTodayDate, get1RMs, getLastSessionSets, getPRDetails, getProgressionSuggestion } from '../store.js';
 import { showPR } from './prBanner.js';
 import { startTimer } from './timer.js';
 import { computeLoad as computeLoadProg } from '../data/program.js';
@@ -8,11 +8,11 @@ export function renderExerciseCard(exercise, workoutId, weekNum, container, onSe
 
   const settings = getSettings();
   const orms = get1RMs();
-  const sub = null; // substitution applied before calling this
   const displayName = exercise.name;
   const plateaued = isPlateaued(displayName);
   const lastWeight = getLastUsedWeight(displayName);
   const suggestedLoad = computeLoadProg(exercise.intensity, orms);
+  const progression = getProgressionSuggestion(displayName, exercise.reps, exercise.sets);
 
   const card = document.createElement('div');
   card.className = 'exercise-card' + (plateaued ? ' plateau' : '');
@@ -41,10 +41,28 @@ export function renderExerciseCard(exercise, workoutId, weekNum, container, onSe
       exercise.intensity.type === 'amrap' ? `AMRAP @ ${exercise.intensity.p}%` :
       `RPE ${exercise.intensity.v}`
     : '';
-  const loadStr = suggestedLoad ? ` · ~${suggestedLoad} ${settings.units}` : lastWeight ? ` · Last: ${lastWeight} ${settings.units}` : '';
   const tempoStr = exercise.tempo ? ` · Tempo ${exercise.tempo}` : '';
-  meta.innerHTML = `<span>${exercise.wu} warmup · ${exercise.sets} × ${exercise.reps}</span><span>${intensityStr}${loadStr}${tempoStr}</span><span>Rest ${Math.round(exercise.rest / 60)}min</span>`;
+  meta.innerHTML = `<span>${exercise.wu} warmup · ${exercise.sets} × ${exercise.reps}</span><span>${intensityStr}${tempoStr}</span><span>Rest ${Math.round(exercise.rest / 60)}min</span>`;
   card.appendChild(meta);
+
+  // Progression suggestion banner
+  // Effective weight: progression suggestion > %1RM load > last weight
+  const effectiveWeight = progression?.suggestedWeight ?? suggestedLoad ?? lastWeight;
+  if (progression) {
+    const banner = document.createElement('div');
+    banner.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 14px;background:var(--surface2);border-top:1px solid var(--border);font-size:12px`;
+    const weightDisplay = effectiveWeight ? `<strong style="color:${progression.color};font-size:14px">${effectiveWeight} ${settings.units}</strong>` : '';
+    const changeStr = progression.change > 0 ? `<span style="color:var(--green);font-size:11px">(+${progression.change}kg)</span>` :
+                      progression.change < 0 ? `<span style="color:var(--red);font-size:11px">(${progression.change}kg)</span>` : '';
+    banner.innerHTML = `
+      <span style="font-size:16px">${progression.icon}</span>
+      <div style="flex:1">
+        <div>${weightDisplay} ${changeStr}</div>
+        <div style="color:var(--text2);font-size:11px;margin-top:1px">${progression.reason}</div>
+      </div>
+    `;
+    card.appendChild(banner);
+  }
 
   // History + PR strip (always visible)
   const lastSession = getLastSessionSets(displayName);
@@ -119,7 +137,7 @@ export function renderExerciseCard(exercise, workoutId, weekNum, container, onSe
     const row = document.createElement('div');
     row.className = 'set-row';
 
-    const defaultWeight = suggestedLoad || lastWeight || '';
+    const defaultWeight = effectiveWeight || '';
     const targetReps = exercise.reps === 'AMRAP' ? '∞' : exercise.reps;
 
     row.innerHTML = `
