@@ -272,6 +272,28 @@ export function deleteCycle(idx) {
   localStorage.setItem('programCycles', JSON.stringify(cycles));
 }
 
+// --- Set mode (drop set / pyramid) per exercise per day ---
+export function getSetMode(exerciseName) {
+  const today = getTodayDate();
+  try {
+    const modes = JSON.parse(localStorage.getItem('setModes') || '{}');
+    return modes[today]?.[exerciseName] || 'normal';
+  } catch { return 'normal'; }
+}
+
+export function saveSetMode(exerciseName, mode) {
+  const today = getTodayDate();
+  try {
+    const modes = JSON.parse(localStorage.getItem('setModes') || '{}');
+    if (!modes[today]) modes[today] = {};
+    modes[today][exerciseName] = mode;
+    // Keep only last 2 days to prevent buildup
+    const days = Object.keys(modes).sort();
+    if (days.length > 2) delete modes[days[0]];
+    localStorage.setItem('setModes', JSON.stringify(modes));
+  } catch {}
+}
+
 // --- Custom exercises ---
 export function getCustomExercises() {
   try { return JSON.parse(localStorage.getItem('customExercises') || '[]'); } catch { return []; }

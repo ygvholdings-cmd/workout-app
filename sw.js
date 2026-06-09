@@ -1,4 +1,4 @@
-const CACHE = 'workout-v4';
+const CACHE = 'workout-v5';
 const ASSETS = [
   'index.html',
   'css/main.css',
@@ -14,6 +14,8 @@ const ASSETS = [
   'js/screens/history.js',
   'js/screens/records.js',
   'js/screens/stats.js',
+  'js/screens/library.js',
+  'js/data/library.js',
   'js/screens/calculator.js',
   'js/components/timer.js',
   'js/components/setLogger.js',

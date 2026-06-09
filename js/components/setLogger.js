@@ -1,4 +1,4 @@
-import { logSet, getLastUsedWeight, checkAndUpdatePR, isPlateaued, getSettings, getTodayDate, get1RMs, getLastSessionSets, getPRDetails, getProgressionSuggestion } from '../store.js';
+import { logSet, getLastUsedWeight, checkAndUpdatePR, isPlateaued, getSettings, getTodayDate, get1RMs, getLastSessionSets, getPRDetails, getProgressionSuggestion, getSetMode, saveSetMode } from '../store.js';
 import { showPR } from './prBanner.js';
 import { startTimer } from './timer.js';
 import { computeLoad as computeLoadProg } from '../data/program.js';
@@ -13,6 +13,7 @@ export function renderExerciseCard(exercise, workoutId, weekNum, container, onSe
   const lastWeight = getLastUsedWeight(displayName);
   const suggestedLoad = computeLoadProg(exercise.intensity, orms);
   const progression = getProgressionSuggestion(displayName, exercise.reps, exercise.sets);
+  let currentSetMode = getSetMode(displayName);
 
   const card = document.createElement('div');
   card.className = 'exercise-card' + (plateaued ? ' plateau' : '');
@@ -26,9 +27,12 @@ export function renderExerciseCard(exercise, workoutId, weekNum, container, onSe
     ? `<span class="badge ${exercise.setType === 'topset' ? 'badge-accent' : exercise.setType === 'amrap' ? 'badge-yellow' : 'badge-blue'}">${exercise.setType === 'topset' ? 'TOP SET' : exercise.setType === 'amrap' ? 'AMRAP' : exercise.setType === 'backoff' ? 'BACK-OFF' : exercise.setType.toUpperCase()}</span> `
     : '';
   const extraBadge = exercise.extra === 'legs' ? '<span class="badge badge-blue" style="margin-left:4px">LEGS</span>' : '';
+  const modeLabels = { normal: '', drop: '↘ DROP', pyramidUp: '▲ PYRAMID', reversePyramid: '▼ REV.PYR' };
+  const modeBadge = currentSetMode !== 'normal' ? `<span class="badge badge-accent" style="font-size:10px">${modeLabels[currentSetMode]}</span>` : '';
 
   hdr.innerHTML = `
-    <div class="exercise-name">${setTypeBadge}${displayName}${extraBadge}</div>
+    <div class="exercise-name">${setTypeBadge}${displayName}${extraBadge} ${modeBadge}</div>
+    <button class="mode-btn" title="Set mode" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:11px;padding:4px 7px;cursor:pointer;flex-shrink:0;margin-right:4px">⚡</button>
     <button class="swap-btn" title="Swap exercise">⇄ Swap</button>
   `;
   card.appendChild(hdr);
@@ -113,6 +117,41 @@ export function renderExerciseCard(exercise, workoutId, weekNum, container, onSe
     card.appendChild(notesToggle);
     card.appendChild(notesContent);
   }
+
+  // Mode button handler — show inline mode picker
+  hdr.querySelector('.mode-btn').addEventListener('click', () => {
+    const existing = card.querySelector('.mode-picker');
+    if (existing) { existing.remove(); return; }
+    const picker = document.createElement('div');
+    picker.className = 'mode-picker';
+    picker.style.cssText = 'display:flex;gap:6px;padding:8px 14px;background:var(--surface2);border-top:1px solid var(--border);flex-wrap:wrap';
+    const modes = [
+      { id: 'normal', label: 'Normal', desc: 'All sets same weight' },
+      { id: 'reversePyramid', label: '▼ Reverse Pyramid', desc: 'Heavy first, drop each set' },
+      { id: 'pyramidUp', label: '▲ Pyramid Up', desc: 'Light first, increase each set' },
+      { id: 'drop', label: '↘ Drop Set', desc: 'One max set + drops' },
+    ];
+    modes.forEach(m => {
+      const btn = document.createElement('button');
+      const isActive = currentSetMode === m.id;
+      btn.style.cssText = `flex:1;min-width:120px;padding:8px;border-radius:8px;border:1px solid ${isActive ? 'var(--accent)' : 'var(--border)'};background:${isActive ? 'var(--accent-dim)' : 'var(--surface)'};color:var(--text);cursor:pointer;text-align:left`;
+      btn.innerHTML = `<div style="font-size:12px;font-weight:700">${m.label}</div><div style="font-size:10px;color:var(--text2)">${m.desc}</div>`;
+      btn.addEventListener('click', () => {
+        currentSetMode = m.id;
+        saveSetMode(displayName, m.id);
+        picker.remove();
+        applyModeToInputs();
+        // Update badge
+        const nameEl = card.querySelector('.exercise-name');
+        if (nameEl) {
+          const newBadge = m.id !== 'normal' ? `<span class="badge badge-accent" style="font-size:10px">${modeLabels[m.id]}</span>` : '';
+          nameEl.innerHTML = setTypeBadge + displayName + extraBadge + ' ' + newBadge;
+        }
+      });
+      picker.appendChild(btn);
+    });
+    card.querySelector('.exercise-header').after(picker);
+  });
 
   // Sets
   const setsContainer = document.createElement('div');
@@ -204,6 +243,37 @@ export function renderExerciseCard(exercise, workoutId, weekNum, container, onSe
   }
 
   card.appendChild(setsContainer);
+
+  // Apply mode-based weights to all set inputs
+  function applyModeToInputs() {
+    const baseWeight = parseFloat(effectiveWeight) || 0;
+    if (!baseWeight) return;
+    const inputs = setsContainer.querySelectorAll('.set-row:not(.warmup-row) .weight-input');
+    const count = inputs.length;
+    if (!count) return;
+
+    inputs.forEach((inp, i) => {
+      if (inp.closest('.set-row')?.classList.contains('logged')) return;
+      let w = baseWeight;
+      if (currentSetMode === 'reversePyramid') {
+        // Start at base, drop 5-7% per set
+        const drops = [0, -0.075, -0.125];
+        w = Math.round((baseWeight * (1 + (drops[i] || -0.125 - (i-2)*0.05))) / 2.5) * 2.5;
+      } else if (currentSetMode === 'pyramidUp') {
+        // Start at 70% of base, increase to base
+        const startPct = 0.70;
+        const pct = startPct + (1 - startPct) * (i / Math.max(count - 1, 1));
+        w = Math.round((baseWeight * pct) / 2.5) * 2.5;
+      } else if (currentSetMode === 'drop') {
+        // Set 1: full weight, Set 2: -20%, Set 3: -35%
+        const drops = [0, -0.20, -0.35];
+        w = Math.round((baseWeight * (1 + (drops[i] || -0.35))) / 2.5) * 2.5;
+      }
+      inp.value = Math.max(w, 0);
+    });
+  }
+  // Apply on initial render if mode is set
+  setTimeout(applyModeToInputs, 0);
 
   // Swap button handler
   card.querySelector('.swap-btn').addEventListener('click', () => {

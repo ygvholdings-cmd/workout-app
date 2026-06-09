@@ -3,6 +3,7 @@ import { renderSchedule } from './screens/schedule.js';
 import { renderHistory } from './screens/history.js';
 import { renderRecords } from './screens/records.js';
 import { renderStats } from './screens/stats.js';
+import { renderLibrary } from './screens/library.js';
 import { getCustomExercises, saveCustomExercise, deleteCustomExercise } from './store.js';
 import { renderCalculator } from './screens/calculator.js';
 import { getSettings, saveSettings, get1RMs, save1RM, getActiveProgram, setActiveProgram } from './store.js';
@@ -57,7 +58,7 @@ function navigate(screenId) {
   // Render
   if (screenId === 'today') renderToday(screen);
   else if (screenId === 'schedule') renderSchedule(screen);
-  else if (screenId === 'history') renderHistory(screen);
+  else if (screenId === 'history') renderLibrary(screen);
   else if (screenId === 'records') renderStats(screen);
   else if (screenId === 'settings') renderSettings(screen);
 }
